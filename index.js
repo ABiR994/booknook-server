@@ -99,6 +99,32 @@ app.get("/", (req, res) => {
 
 const isValidId = (id) => /^[0-9a-fA-F]{24}$/.test(id);
 
+const CATEGORIES = ["Fiction", "Science", "History", "Kids", "Others"];
+
+const isImageUrl = (value) => /^https?:\/\/\S+$/i.test(value);
+
+// Checks the fields of a book coming from the client.
+// Returns { error } for the first problem, or { book } with clean values.
+function validateBook(body = {}) {
+  const title = String(body.title ?? "").trim();
+  const author = String(body.author ?? "").trim();
+  const category = String(body.category ?? "").trim();
+  const image = String(body.image ?? "").trim();
+  const description = String(body.description ?? "").trim();
+  const totalCopies = Number(body.totalCopies);
+
+  if (!title || title.length > 150) return { error: "Title is required (up to 150 characters)." };
+  if (!author || author.length > 100) return { error: "Author name is required (up to 100 characters)." };
+  if (!CATEGORIES.includes(category)) return { error: `Category must be one of: ${CATEGORIES.join(", ")}.` };
+  if (!isImageUrl(image)) return { error: "A valid image URL is required." };
+  if (!description || description.length > 1000) return { error: "Description is required (up to 1000 characters)." };
+  if (!Number.isInteger(totalCopies) || totalCopies < 1 || totalCopies > 1000) {
+    return { error: "Total copies must be a whole number from 1 to 1000." };
+  }
+
+  return { book: { title, author, category, image, description, totalCopies } };
+}
+
 // GET /books            all books
 // GET /books?sort=newest&limit=6   the latest 6 books (New Arrivals)
 // Optional: sort=newest|oldest, limit=1-100
@@ -141,6 +167,28 @@ app.get("/books/:id", async (req, res) => {
   }
 
   res.send(book);
+});
+
+// POST /books           add a book (private)
+// The owner and the date come from the server, not from the request body.
+app.post("/books", verifyToken, async (req, res) => {
+  const { error, book } = validateBook(req.body);
+
+  if (error) {
+    return res.status(400).send({ message: error });
+  }
+
+  const newBook = {
+    ...book,
+    availableCopies: book.totalCopies,
+    addedBy: { name: req.user.name, email: req.user.email },
+    createdAt: new Date(),
+  };
+
+  const books = await booksCollection();
+  const result = await books.insertOne(newBook);
+
+  res.status(201).send({ message: "Book added successfully.", book: { _id: result.insertedId, ...newBook } });
 });
 
 // Checks that MongoDB can be reached.
