@@ -42,6 +42,13 @@ async function getDatabase() {
   if (!database) {
     await client.connect();
     database = client.db(process.env.DB_NAME || "booknook");
+
+    // A user can hold only one active borrow per book. Returning a book deletes the record.
+    try {
+      await database.collection("borrows").createIndex({ bookId: 1, userEmail: 1 }, { unique: true });
+    } catch (error) {
+      console.error("Could not create the borrows index:", error.message);
+    }
   }
   return database;
 }
@@ -189,6 +196,101 @@ app.post("/books", verifyToken, async (req, res) => {
   const result = await books.insertOne(newBook);
 
   res.status(201).send({ message: "Book added successfully.", book: { _id: result.insertedId, ...newBook } });
+});
+
+// ---- Borrows -------------------------------------------------------------
+
+const LOAN_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// POST /borrows          borrow a book (private). Body: { bookId }
+// - a user cannot borrow the same book twice at the same time
+// - availableCopies goes down by 1 with $inc and never below 0
+app.post("/borrows", verifyToken, async (req, res) => {
+  const bookId = String(req.body?.bookId ?? "");
+
+  if (!isValidId(bookId)) {
+    return res.status(400).send({ message: "A valid book id is required." });
+  }
+
+  const books = await booksCollection();
+  const borrows = await borrowsCollection();
+  const userEmail = req.user.email;
+
+  const book = await books.findOne({ _id: new ObjectId(bookId) });
+  if (!book) {
+    return res.status(404).send({ message: "Book not found." });
+  }
+
+  if (await borrows.findOne({ bookId, userEmail })) {
+    return res.status(409).send({ message: "You have already borrowed this book." });
+  }
+
+  // Take one copy only if one is left. This is a single atomic step, so two people
+  // borrowing the last copy at the same time cannot both succeed.
+  const updated = await books.findOneAndUpdate(
+    { _id: book._id, availableCopies: { $gt: 0 } },
+    { $inc: { availableCopies: -1 } },
+    { returnDocument: "after" },
+  );
+  if (!updated) {
+    return res.status(409).send({ message: "Sorry, this book is not available right now." });
+  }
+
+  const borrowDate = new Date();
+  const borrow = {
+    bookId,
+    bookTitle: book.title,
+    bookImage: book.image,
+    userEmail,
+    borrowDate,
+    returnDate: new Date(borrowDate.getTime() + LOAN_DAYS * DAY_MS),
+  };
+
+  try {
+    const result = await borrows.insertOne(borrow);
+    res.status(201).send({
+      message: "Book borrowed successfully.",
+      borrow: { _id: result.insertedId, ...borrow },
+      availableCopies: updated.availableCopies,
+    });
+  } catch (error) {
+    // Put the copy back if the borrow could not be saved.
+    await books.updateOne({ _id: book._id }, { $inc: { availableCopies: 1 } });
+    if (error.code === 11000) {
+      return res.status(409).send({ message: "You have already borrowed this book." });
+    }
+    throw error;
+  }
+});
+
+// GET /borrows           borrows of the logged in user, newest first (private)
+app.get("/borrows", verifyToken, async (req, res) => {
+  const borrows = await borrowsCollection();
+  const result = await borrows.find({ userEmail: req.user.email }).sort({ borrowDate: -1 }).toArray();
+  res.send(result);
+});
+
+// DELETE /borrows/:id    return a book (private). Only the borrower can return it.
+// availableCopies goes up by 1 with $inc.
+app.delete("/borrows/:id", verifyToken, async (req, res) => {
+  const { id } = req.params;
+
+  if (!isValidId(id)) {
+    return res.status(400).send({ message: "Invalid borrow id." });
+  }
+
+  const borrows = await borrowsCollection();
+  const borrow = await borrows.findOneAndDelete({ _id: new ObjectId(id), userEmail: req.user.email });
+
+  if (!borrow) {
+    return res.status(404).send({ message: "Borrow record not found." });
+  }
+
+  const books = await booksCollection();
+  await books.updateOne({ _id: new ObjectId(borrow.bookId) }, { $inc: { availableCopies: 1 } });
+
+  res.send({ message: "Book returned successfully." });
 });
 
 // Checks that MongoDB can be reached.

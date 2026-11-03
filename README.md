@@ -13,6 +13,19 @@ REST API for **BookNook**, a small online library where you add a book, borrow a
 - Seed script with 12 sample books
 - Ready for Vercel (`vercel.json`)
 
+## API routes
+
+| Method | Route          | Access  | Description                                              |
+| ------ | -------------- | ------- | -------------------------------------------------------- |
+| GET    | `/books`       | Public  | All books. `?sort=newest&limit=6` for New Arrivals       |
+| GET    | `/books/:id`   | Public  | One book                                                 |
+| POST   | `/books`       | Private | Add a book                                               |
+| POST   | `/borrows`     | Private | Borrow a book (`{ bookId }`), copies -1, no double borrow |
+| GET    | `/borrows`     | Private | Borrows of the logged in user                            |
+| DELETE | `/borrows/:id` | Private | Return a book, copies +1                                 |
+
+Private routes expect `Authorization: Bearer <token>`.
+
 ## Data model
 
 ```
