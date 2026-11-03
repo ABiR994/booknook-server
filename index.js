@@ -198,6 +198,93 @@ app.post("/books", verifyToken, async (req, res) => {
   res.status(201).send({ message: "Book added successfully.", book: { _id: result.insertedId, ...newBook } });
 });
 
+// PATCH /books/:id      update a book (private, owner only)
+// Body: the same fields as when adding a book. Changing totalCopies keeps the number of
+// copies that are out on loan, so availableCopies is adjusted by the same amount.
+app.patch("/books/:id", verifyToken, async (req, res) => {
+  const { id } = req.params;
+
+  if (!isValidId(id)) {
+    return res.status(400).send({ message: "Invalid book id." });
+  }
+
+  const { error, book: changes } = validateBook(req.body);
+  if (error) {
+    return res.status(400).send({ message: error });
+  }
+
+  const books = await booksCollection();
+  const existing = await books.findOne({ _id: new ObjectId(id) });
+
+  if (!existing) {
+    return res.status(404).send({ message: "Book not found." });
+  }
+  if (existing.addedBy?.email !== req.user.email) {
+    return res.status(403).send({ message: "You can only edit books that you added." });
+  }
+
+  const borrowedNow = existing.totalCopies - existing.availableCopies;
+  if (changes.totalCopies < borrowedNow) {
+    return res.status(400).send({
+      message: `Total copies cannot be less than the ${borrowedNow} copies currently borrowed.`,
+    });
+  }
+
+  // One atomic update that also recalculates availableCopies from the stored values.
+  const updated = await books.findOneAndUpdate(
+    {
+      _id: existing._id,
+      "addedBy.email": req.user.email,
+      $expr: { $gte: [changes.totalCopies, { $subtract: ["$totalCopies", "$availableCopies"] }] },
+    },
+    [
+      {
+        $set: {
+          ...changes,
+          availableCopies: {
+            $subtract: [changes.totalCopies, { $subtract: ["$totalCopies", "$availableCopies"] }],
+          },
+        },
+      },
+    ],
+    { returnDocument: "after" },
+  );
+
+  if (!updated) {
+    return res.status(409).send({ message: "The book changed while you were editing it. Please try again." });
+  }
+
+  res.send({ message: "Book updated successfully.", book: updated });
+});
+
+// DELETE /books/:id     delete a book (private, owner only)
+// A book that is currently borrowed cannot be deleted.
+app.delete("/books/:id", verifyToken, async (req, res) => {
+  const { id } = req.params;
+
+  if (!isValidId(id)) {
+    return res.status(400).send({ message: "Invalid book id." });
+  }
+
+  const books = await booksCollection();
+  const existing = await books.findOne({ _id: new ObjectId(id) });
+
+  if (!existing) {
+    return res.status(404).send({ message: "Book not found." });
+  }
+  if (existing.addedBy?.email !== req.user.email) {
+    return res.status(403).send({ message: "You can only delete books that you added." });
+  }
+
+  const borrows = await borrowsCollection();
+  if ((await borrows.countDocuments({ bookId: id })) > 0) {
+    return res.status(409).send({ message: "This book is currently borrowed, so it cannot be deleted yet." });
+  }
+
+  await books.deleteOne({ _id: existing._id });
+  res.send({ message: "Book deleted successfully." });
+});
+
 // ---- Borrows -------------------------------------------------------------
 
 const LOAN_DAYS = 7;

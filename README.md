@@ -20,6 +20,8 @@ REST API for **BookNook**, a small online library where you add a book, borrow a
 | GET    | `/books`       | Public  | All books. `?sort=newest&limit=6` for New Arrivals       |
 | GET    | `/books/:id`   | Public  | One book                                                 |
 | POST   | `/books`       | Private | Add a book                                               |
+| PATCH  | `/books/:id`   | Private | Update a book (owner only)                               |
+| DELETE | `/books/:id`   | Private | Delete a book (owner only, not while borrowed)           |
 | POST   | `/borrows`     | Private | Borrow a book (`{ bookId }`), copies -1, no double borrow |
 | GET    | `/borrows`     | Private | Borrows of the logged in user                            |
 | DELETE | `/borrows/:id` | Private | Return a book, copies +1                                 |
