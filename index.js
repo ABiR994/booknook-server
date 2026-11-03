@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { MongoClient, ServerApiVersion } from "mongodb";
+import { MongoClient, ObjectId, ServerApiVersion } from "mongodb";
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -55,6 +55,54 @@ export const borrowsCollection = async () => (await getDatabase()).collection("b
 
 app.get("/", (req, res) => {
   res.send({ name: "BookNook API", status: "running" });
+});
+
+// ---- Books ---------------------------------------------------------------
+
+const isValidId = (id) => /^[0-9a-fA-F]{24}$/.test(id);
+
+// GET /books            all books
+// GET /books?sort=newest&limit=6   the latest 6 books (New Arrivals)
+// Optional: sort=newest|oldest, limit=1-100
+app.get("/books", async (req, res) => {
+  const { sort, limit } = req.query;
+
+  if (sort !== undefined && !["newest", "oldest"].includes(sort)) {
+    return res.status(400).send({ message: "sort must be newest or oldest." });
+  }
+
+  let maxBooks = 0; // 0 means no limit in MongoDB
+  if (limit !== undefined) {
+    maxBooks = Number(limit);
+    if (!Number.isInteger(maxBooks) || maxBooks < 1 || maxBooks > 100) {
+      return res.status(400).send({ message: "limit must be a whole number from 1 to 100." });
+    }
+  }
+
+  const books = await booksCollection();
+  const query = books.find();
+  if (sort) query.sort({ createdAt: sort === "newest" ? -1 : 1 });
+  const result = await query.limit(maxBooks).toArray();
+
+  res.send(result);
+});
+
+// GET /books/:id        one book
+app.get("/books/:id", async (req, res) => {
+  const { id } = req.params;
+
+  if (!isValidId(id)) {
+    return res.status(400).send({ message: "Invalid book id." });
+  }
+
+  const books = await booksCollection();
+  const book = await books.findOne({ _id: new ObjectId(id) });
+
+  if (!book) {
+    return res.status(404).send({ message: "Book not found." });
+  }
+
+  res.send(book);
 });
 
 // Checks that MongoDB can be reached.
