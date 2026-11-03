@@ -6,30 +6,22 @@
 
 ### Powering the library behind every book, borrow and return.
 
-A RESTful backend API for BookNook, a small online library where readers can add books, explore collections, borrow books and return them. Built with Express.js, MongoDB and JWT authentication, providing secure access to book management and borrowing operations.
+A RESTful backend API for BookNook, a small online library where readers can add books, explore collections, borrow books and return them. Built with Express.js, MongoDB and JWT authentication.
 
 <br />
 
-<a href="https://booknook-mocha.vercel.app/">
-  <img src="https://img.shields.io/badge/Live%20Application-Visit%20Website-15803d?style=for-the-badge&logo=vercel&logoColor=white" alt="Live Application" />
-</a>
-<a href="https://github.com/ABiR994/booknook-server">
-  <img src="https://img.shields.io/badge/Server%20Source-GitHub-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Repository" />
-</a>
-<a href="https://github.com/ABiR994/booknook-client">
-  <img src="https://img.shields.io/badge/Client%20Source-GitHub-181717?style=for-the-badge&logo=github&logoColor=white" alt="Client Repository" />
-</a>
+[![Live Application](https://img.shields.io/badge/Live%20Application-Visit%20Website-15803d?style=for-the-badge&logo=vercel&logoColor=white)](https://booknook-mocha.vercel.app/)
+[![Server Repository](https://img.shields.io/badge/Server%20Source-GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/ABiR994/booknook-server)
+[![Client Repository](https://img.shields.io/badge/Client%20Source-GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/ABiR994/booknook-client)
 
 <br />
-<br />
 
-<img src="https://img.shields.io/badge/Node.js-Runtime-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js" />
-<img src="https://img.shields.io/badge/Express-5-000000?style=flat-square&logo=express&logoColor=white" alt="Express.js" />
-<img src="https://img.shields.io/badge/MongoDB-Database-47A248?style=flat-square&logo=mongodb&logoColor=white" alt="MongoDB" />
-<img src="https://img.shields.io/badge/JavaScript-ES6+-F7DF1E?style=flat-square&logo=javascript&logoColor=black" alt="JavaScript" />
-<img src="https://img.shields.io/badge/JWT-Authentication-000000?style=flat-square&logo=jsonwebtokens&logoColor=white" alt="JWT" />
-<img src="https://img.shields.io/badge/jose-Token%20Verification-6C47FF?style=flat-square" alt="jose" />
-<img src="https://img.shields.io/badge/Vercel-Deployment-000000?style=flat-square&logo=vercel&logoColor=white" alt="Vercel" />
+![Node.js](https://img.shields.io/badge/Node.js-Runtime-339933?style=flat-square&logo=nodedotjs&logoColor=white)
+![Express](https://img.shields.io/badge/Express-5-000000?style=flat-square&logo=express&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-Database-47A248?style=flat-square&logo=mongodb&logoColor=white)
+![JavaScript](https://img.shields.io/badge/JavaScript-ES6+-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
+![JWT](https://img.shields.io/badge/JWT-Authentication-000000?style=flat-square&logo=jsonwebtokens&logoColor=white)
+![Vercel](https://img.shields.io/badge/Vercel-Deployment-000000?style=flat-square&logo=vercel&logoColor=white)
 
 </div>
 
@@ -47,84 +39,76 @@ Authentication is handled through JWT verification using `jose`. The server vali
 
 The backend is deployed on Vercel and communicates with the separate Next.js frontend.
 
----
-
 ## 🔗 Links
 
-- **Live Application:** [booknook-mocha.vercel.app](https://booknook-mocha.vercel.app/)
-- **Server Repository:** [github.com/ABiR994/booknook-server](https://github.com/ABiR994/booknook-server)
-- **Client Repository:** [github.com/ABiR994/booknook-client](https://github.com/ABiR994/booknook-client)
+- **Live Application:** https://booknook-mocha.vercel.app/
+- **Server Repository:** https://github.com/ABiR994/booknook-server
+- **Client Repository:** https://github.com/ABiR994/booknook-client
 
 ---
 
 ## ✨ Key Features
 
-### 📚 Book Management API
+### 📚 Book Management
 
-Provides RESTful endpoints for managing the library's book collection.
-
-- Retrieve all books.
-- Retrieve an individual book by its ID.
-- Add new books to the database.
+- Retrieve all books from the database.
+- Retrieve individual books by ID.
+- Add new books.
 - Update existing book information.
 - Delete books with ownership validation.
-- Prevent deletion of books that are currently borrowed.
+- Prevent deletion of books with active borrowing records.
 
 ### 🔍 Book Retrieval and Sorting
 
-The API supports retrieving the complete library and individual book details.
-
-The books endpoint supports query parameters for sorting and limiting results.
-
-Example:
+The books endpoint supports sorting and limiting results through query parameters.
 
 ```http
 GET /books?sort=newest&limit=6
 ```
 
-This allows the frontend to retrieve the latest 6 books for its New Arrivals section.
+Supported options:
+
+- `sort=newest` – Newest books first.
+- `sort=oldest` – Oldest books first.
+- `limit=6` – Limit the number of returned books.
 
 ### ➕ Add Book
 
 Authenticated users can contribute new books to the shared library.
 
-The server stores:
+Each book stores:
 
-- Book title.
-- Author name.
-- Category.
-- Book image URL.
+- Title and author.
+- Category and image URL.
 - Description.
-- Total copies.
-- Available copies.
+- Total and available copies.
 - Contributor name and email.
 - Creation date.
 
-The contributor information is associated with the authenticated user.
+Contributor information is taken from the authenticated user rather than the request body.
 
 ### ✏️ Update and Delete Books
-
-The API supports updating and deleting books through protected endpoints.
 
 - `PATCH` updates existing book information.
 - `DELETE` removes a book from the collection.
 - Ownership verification ensures users can only manage their own books.
 - Books cannot be deleted while they have active borrowing records.
+- Updating total copies recalculates available copies while preserving currently borrowed copies.
 
 ### 🔄 Borrowing System
 
 The borrowing system manages book availability and borrowing records.
 
-When a user borrows a book:
+When a user borrows a book, the server:
 
-1. The server validates the authenticated user.
+1. Validates the authenticated user.
 2. Checks whether the requested book exists.
 3. Checks available copies.
 4. Prevents duplicate active borrowing by the same user.
 5. Creates a borrowing record.
 6. Decreases the available copy count by one.
 
-Borrowing records contain the book ID, book title, book image, user email, borrow date and return date.
+Borrowing records contain the book ID, title, image, user email, borrow date and return date.
 
 ### ↩️ Return Book
 
@@ -143,7 +127,8 @@ Book availability is maintained through MongoDB atomic update operations.
 - Borrowing decreases available copies.
 - Returning increases available copies.
 - Borrowing is rejected when no copies remain.
-- Copy updates use `$inc` to avoid simple read-modify-write inconsistencies.
+- Copy updates use `$inc` to prevent simple read-modify-write inconsistencies.
+- Borrowing the last available copy is handled atomically.
 
 ### 🔐 JWT Authentication with BetterAuth
 
@@ -151,43 +136,31 @@ Protected API routes use JWT-based authentication.
 
 The server uses `jose` to verify incoming tokens against the BetterAuth JWKS endpoint.
 
-The `verifyToken` middleware:
+The authentication middleware:
 
 - Extracts the bearer token from the Authorization header.
 - Verifies the token signature.
-- Validates the token against the configured JWKS endpoint.
-- Rejects invalid or missing authentication tokens.
-- Makes the authenticated user information available to protected routes.
+- Validates the token issuer and audience.
+- Rejects missing, invalid or expired tokens.
+- Makes authenticated user information available to protected routes.
 
 Public endpoints remain accessible without authentication.
 
 ### 🌐 CORS Configuration
 
-Cross-Origin Resource Sharing is configured to allow requests from the BookNook client application.
-
-This restricts browser-based cross-origin access to the configured frontend origin.
+Cross-Origin Resource Sharing is configured to allow requests from the BookNook frontend.
 
 ### ❤️ Health Check
 
-A health endpoint is available to check the server and MongoDB connection.
+A health endpoint checks whether the server and MongoDB connection are working.
 
 ```http
 GET /health
 ```
 
-Useful for verifying that the backend is running and the database connection is available.
-
-### 🌱 Database Seeding
-
-The project includes a seed script that inserts 12 sample books into MongoDB.
-
-This makes it easier to populate the library during initial development and testing.
-
 ### ☁️ Vercel Deployment
 
-The server is configured for Vercel deployment using `vercel.json`.
-
-The application can run locally during development and be deployed independently from the Next.js frontend.
+The server is configured for Vercel deployment and can run locally during development or independently in production.
 
 ---
 
@@ -195,14 +168,14 @@ The application can run locally during development and be deployed independently
 
 | Technology | Usage |
 |---|---|
-| 🟢 Node.js | JavaScript runtime |
-| 🚀 Express.js 5 | REST API framework |
-| 🍃 MongoDB | NoSQL database |
-| 🔷 MongoDB Native Driver | Database operations and queries |
-| 🔐 jose | JWT verification and JWKS integration |
-| 🔑 BetterAuth | Authentication and token issuer |
-| 🌐 CORS | Cross-origin request configuration |
-| ▲ Vercel | Server deployment |
+| Node.js | JavaScript runtime |
+| Express.js 5 | REST API framework |
+| MongoDB | NoSQL database |
+| MongoDB Native Driver | Database operations and queries |
+| jose | JWT verification and JWKS integration |
+| BetterAuth | Authentication and token issuer |
+| CORS | Cross-origin request configuration |
+| Vercel | Server deployment |
 
 ---
 
@@ -339,14 +312,7 @@ Each document represents an active borrowing record.
 ```text
 booknook-server/
 │
-├── src/
-│   ├── middleware/
-│   │   └── verifyToken.js
-│   │
-│   ├── config/
-│   │
-│   ├── index.js
-│   └── seed.js
+├── index.js
 │
 ├── .env.example
 ├── .gitignore
@@ -362,12 +328,12 @@ booknook-server/
 
 - [Node.js](https://nodejs.org/) v20 or later.
 - npm.
-- A free [MongoDB Atlas](https://www.mongodb.com/atlas) cluster.
+- A [MongoDB Atlas](https://www.mongodb.com/atlas) cluster.
 - A configured BetterAuth application on the client side.
 
 ### Installation
 
-Clone the server repository:
+Clone the repository:
 
 ```bash
 git clone https://github.com/ABiR994/booknook-server.git
@@ -390,23 +356,15 @@ Configure the required environment variables.
 
 ### Environment Variables
 
-Fill in the values in `.env`:
+Add the following variables to your `.env` file:
 
 | Variable | Description |
 |---|---|
 | `MONGODB_URI` | MongoDB Atlas connection string |
 | `DB_NAME` | MongoDB database name |
 | `CLIENT_URL` | Frontend origin allowed by CORS |
-| `JWKS_URL` | BetterAuth JWKS endpoint used for JWT verification |
+| `AUTH_BASE_URL` | Base URL of the BetterAuth application |
 | `PORT` | Local server port (default: `5000`) |
-
-### Seed Sample Books
-
-To insert the 12 sample books into MongoDB, run:
-
-```bash
-npm run seed
-```
 
 ### Run Development Server
 
@@ -443,7 +401,7 @@ When deploying your own copy:
 3. Set `MONGODB_URI` to your MongoDB Atlas connection string.
 4. Configure `DB_NAME` with your database name.
 5. Set `CLIENT_URL` to your deployed frontend origin.
-6. Configure `JWKS_URL` with your BetterAuth JWKS endpoint.
+6. Set `AUTH_BASE_URL` to your BetterAuth application URL.
 7. Ensure MongoDB Atlas allows connections from the deployed backend.
 8. Deploy the application and verify the `/health` endpoint.
 
@@ -453,13 +411,12 @@ The frontend communicates with this backend through the configured API URL.
 
 ## 🔗 Related Project
 
-**BookNook Client**
+### BookNook Client
 
 The frontend is built separately using Next.js, React, TypeScript and Tailwind CSS.
 
-[View Client Repository](https://github.com/ABiR994/booknook-client)
-
-[Visit Live Application](https://booknook-mocha.vercel.app/)
+- [View Client Repository](https://github.com/ABiR994/booknook-client)
+- [Visit Live Application](https://booknook-mocha.vercel.app/)
 
 ---
 
@@ -469,13 +426,6 @@ The frontend is built separately using Next.js, React, TypeScript and Tailwind C
 
 CSE Student | Aspiring Software Engineer
 
-<a href="https://github.com/ABiR994">
-  <img src="https://img.shields.io/badge/GitHub-ABiR994-181717?style=for-the-badge&logo=github" alt="GitHub" />
-</a>
-<a href="https://linkedin.com/in/salem-nur-abir/">
-  <img src="https://img.shields.io/badge/LinkedIn-Salem%20Nur%20Abir-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn" />
-</a>
-<a href="https://abir994.pro.bd/">
-  <img src="https://img.shields.io/badge/Portfolio-Visit%20Website-15803d?style=for-the-badge&logo=vercel&logoColor=white" alt="Portfolio" />
-</a>
-
+[![GitHub](https://img.shields.io/badge/GitHub-ABiR994-181717?style=for-the-badge&logo=github)](https://github.com/ABiR994)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Salem%20Nur%20Abir-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/salem-nur-abir/)
+[![Portfolio](https://img.shields.io/badge/Portfolio-Visit%20Website-15803d?style=for-the-badge&logo=vercel&logoColor=white)](https://abir994.pro.bd/)

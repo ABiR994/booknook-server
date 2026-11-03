@@ -7,20 +7,12 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 const app = express();
 const port = process.env.PORT || 5000;
 
-/* -------------------------------------------------------------------------- */
-/*                                 Middleware                                 */
-/* -------------------------------------------------------------------------- */
-
 const allowedOrigins = (process.env.CLIENT_URL || "http://localhost:3000")
   .split(",")
   .map((origin) => origin.trim());
 
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
-
-/* -------------------------------------------------------------------------- */
-/*                                  MongoDB                                   */
-/* -------------------------------------------------------------------------- */
 
 if (!process.env.MONGODB_URI) {
   throw new Error("Please add MONGODB_URI to your .env file.");
@@ -37,13 +29,11 @@ const client = new MongoClient(process.env.MONGODB_URI, {
 
 let database;
 
-// Connect lazily so the same code works locally and on Vercel (serverless).
 async function getDatabase() {
   if (!database) {
     await client.connect();
     database = client.db(process.env.DB_NAME || "booknook");
 
-    // A user can hold only one active borrow per book. Returning a book deletes the record.
     try {
       await database.collection("borrows").createIndex({ bookId: 1, userEmail: 1 }, { unique: true });
     } catch (error) {
@@ -53,18 +43,11 @@ async function getDatabase() {
   return database;
 }
 
-// Collections used by the routes that are added in the next steps.
 export const booksCollection = async () => (await getDatabase()).collection("books");
 export const borrowsCollection = async () => (await getDatabase()).collection("borrows");
 
-/* -------------------------------------------------------------------------- */
-/*                         JWT verification (Better Auth)                     */
-/* -------------------------------------------------------------------------- */
-
 let jwks;
 
-// Better Auth (in the client app) signs the tokens. This server only verifies them
-// with the public keys published at <AUTH_BASE_URL>/api/auth/jwks.
 const getJwks = () => {
   if (!jwks) {
     jwks = createRemoteJWKSet(new URL(`${process.env.AUTH_BASE_URL}/api/auth/jwks`));
@@ -72,8 +55,6 @@ const getJwks = () => {
   return jwks;
 };
 
-// Add to every private route: app.post("/books", verifyToken, handler)
-// On success the logged in user is available as req.user.
 const verifyToken = async (req, res, next) => {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
@@ -94,15 +75,9 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
-/* -------------------------------------------------------------------------- */
-/*                                   Routes                                   */
-/* -------------------------------------------------------------------------- */
-
 app.get("/", (req, res) => {
   res.send({ name: "BookNook API", status: "running" });
 });
-
-// ---- Books ---------------------------------------------------------------
 
 const isValidId = (id) => /^[0-9a-fA-F]{24}$/.test(id);
 
@@ -110,8 +85,6 @@ const CATEGORIES = ["Fiction", "Science", "History", "Kids", "Others"];
 
 const isImageUrl = (value) => /^https?:\/\/\S+$/i.test(value);
 
-// Checks the fields of a book coming from the client.
-// Returns { error } for the first problem, or { book } with clean values.
 function validateBook(body = {}) {
   const title = String(body.title ?? "").trim();
   const author = String(body.author ?? "").trim();
@@ -132,9 +105,6 @@ function validateBook(body = {}) {
   return { book: { title, author, category, image, description, totalCopies } };
 }
 
-// GET /books            all books
-// GET /books?sort=newest&limit=6   the latest 6 books (New Arrivals)
-// Optional: sort=newest|oldest, limit=1-100
 app.get("/books", async (req, res) => {
   const { sort, limit } = req.query;
 
@@ -142,7 +112,7 @@ app.get("/books", async (req, res) => {
     return res.status(400).send({ message: "sort must be newest or oldest." });
   }
 
-  let maxBooks = 0; // 0 means no limit in MongoDB
+  let maxBooks = 0;
   if (limit !== undefined) {
     maxBooks = Number(limit);
     if (!Number.isInteger(maxBooks) || maxBooks < 1 || maxBooks > 100) {
@@ -158,7 +128,6 @@ app.get("/books", async (req, res) => {
   res.send(result);
 });
 
-// GET /books/:id        one book
 app.get("/books/:id", async (req, res) => {
   const { id } = req.params;
 
@@ -176,8 +145,6 @@ app.get("/books/:id", async (req, res) => {
   res.send(book);
 });
 
-// POST /books           add a book (private)
-// The owner and the date come from the server, not from the request body.
 app.post("/books", verifyToken, async (req, res) => {
   const { error, book } = validateBook(req.body);
 
@@ -198,9 +165,6 @@ app.post("/books", verifyToken, async (req, res) => {
   res.status(201).send({ message: "Book added successfully.", book: { _id: result.insertedId, ...newBook } });
 });
 
-// PATCH /books/:id      update a book (private, owner only)
-// Body: the same fields as when adding a book. Changing totalCopies keeps the number of
-// copies that are out on loan, so availableCopies is adjusted by the same amount.
 app.patch("/books/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
 
@@ -230,7 +194,6 @@ app.patch("/books/:id", verifyToken, async (req, res) => {
     });
   }
 
-  // One atomic update that also recalculates availableCopies from the stored values.
   const updated = await books.findOneAndUpdate(
     {
       _id: existing._id,
@@ -257,8 +220,6 @@ app.patch("/books/:id", verifyToken, async (req, res) => {
   res.send({ message: "Book updated successfully.", book: updated });
 });
 
-// DELETE /books/:id     delete a book (private, owner only)
-// A book that is currently borrowed cannot be deleted.
 app.delete("/books/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
 
@@ -285,14 +246,9 @@ app.delete("/books/:id", verifyToken, async (req, res) => {
   res.send({ message: "Book deleted successfully." });
 });
 
-// ---- Borrows -------------------------------------------------------------
-
 const LOAN_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// POST /borrows          borrow a book (private). Body: { bookId }
-// - a user cannot borrow the same book twice at the same time
-// - availableCopies goes down by 1 with $inc and never below 0
 app.post("/borrows", verifyToken, async (req, res) => {
   const bookId = String(req.body?.bookId ?? "");
 
@@ -313,8 +269,6 @@ app.post("/borrows", verifyToken, async (req, res) => {
     return res.status(409).send({ message: "You have already borrowed this book." });
   }
 
-  // Take one copy only if one is left. This is a single atomic step, so two people
-  // borrowing the last copy at the same time cannot both succeed.
   const updated = await books.findOneAndUpdate(
     { _id: book._id, availableCopies: { $gt: 0 } },
     { $inc: { availableCopies: -1 } },
@@ -342,7 +296,6 @@ app.post("/borrows", verifyToken, async (req, res) => {
       availableCopies: updated.availableCopies,
     });
   } catch (error) {
-    // Put the copy back if the borrow could not be saved.
     await books.updateOne({ _id: book._id }, { $inc: { availableCopies: 1 } });
     if (error.code === 11000) {
       return res.status(409).send({ message: "You have already borrowed this book." });
@@ -351,15 +304,12 @@ app.post("/borrows", verifyToken, async (req, res) => {
   }
 });
 
-// GET /borrows           borrows of the logged in user, newest first (private)
 app.get("/borrows", verifyToken, async (req, res) => {
   const borrows = await borrowsCollection();
   const result = await borrows.find({ userEmail: req.user.email }).sort({ borrowDate: -1 }).toArray();
   res.send(result);
 });
 
-// DELETE /borrows/:id    return a book (private). Only the borrower can return it.
-// availableCopies goes up by 1 with $inc.
 app.delete("/borrows/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
 
@@ -380,16 +330,11 @@ app.delete("/borrows/:id", verifyToken, async (req, res) => {
   res.send({ message: "Book returned successfully." });
 });
 
-// Checks that MongoDB can be reached.
 app.get("/health", async (req, res) => {
   const db = await getDatabase();
   await db.command({ ping: 1 });
   res.send({ status: "ok", database: db.databaseName });
 });
-
-/* -------------------------------------------------------------------------- */
-/*                               Error handling                                */
-/* -------------------------------------------------------------------------- */
 
 app.use((req, res) => {
   res.status(404).send({ message: "Route not found." });
@@ -400,7 +345,6 @@ app.use((error, req, res, next) => {
   res.status(500).send({ message: "Something went wrong on the server." });
 });
 
-// Vercel runs the exported app, so only listen when running locally.
 if (!process.env.VERCEL) {
   app.listen(port, () => {
     console.log(`BookNook server is running on port ${port}`);
