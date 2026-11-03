@@ -9,6 +9,7 @@ REST API for **BookNook**, a small online library where you add a book, borrow a
 
 - Express 5 server with the native MongoDB driver
 - CORS limited to the client origin
+- JWT verification with `jose` against the Better Auth JWKS endpoint (`verifyToken` middleware)
 - Seed script with 12 sample books
 - Ready for Vercel (`vercel.json`)
 

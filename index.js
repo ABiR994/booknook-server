@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { MongoClient, ObjectId, ServerApiVersion } from "mongodb";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -48,6 +49,43 @@ async function getDatabase() {
 // Collections used by the routes that are added in the next steps.
 export const booksCollection = async () => (await getDatabase()).collection("books");
 export const borrowsCollection = async () => (await getDatabase()).collection("borrows");
+
+/* -------------------------------------------------------------------------- */
+/*                         JWT verification (Better Auth)                     */
+/* -------------------------------------------------------------------------- */
+
+let jwks;
+
+// Better Auth (in the client app) signs the tokens. This server only verifies them
+// with the public keys published at <AUTH_BASE_URL>/api/auth/jwks.
+const getJwks = () => {
+  if (!jwks) {
+    jwks = createRemoteJWKSet(new URL(`${process.env.AUTH_BASE_URL}/api/auth/jwks`));
+  }
+  return jwks;
+};
+
+// Add to every private route: app.post("/books", verifyToken, handler)
+// On success the logged in user is available as req.user.
+const verifyToken = async (req, res, next) => {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized: token is missing." });
+  }
+
+  try {
+    const { payload } = await jwtVerify(token, getJwks(), {
+      issuer: process.env.AUTH_BASE_URL,
+      audience: process.env.AUTH_BASE_URL,
+    });
+    req.user = { id: payload.sub, name: payload.name, email: payload.email };
+    next();
+  } catch {
+    res.status(401).send({ message: "Unauthorized: token is invalid or expired." });
+  }
+};
 
 /* -------------------------------------------------------------------------- */
 /*                                   Routes                                   */
