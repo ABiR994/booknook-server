@@ -1,4 +1,4 @@
- <div align="center">
+<div align="center">
 
 <img src="https://raw.githubusercontent.com/ABiR994/booknook-client/Main/src/app/icon.svg" alt="BookNook Logo" width="90" />
 
@@ -35,7 +35,7 @@ The server handles book management, borrowing operations, database interactions 
 
 Built with **Express.js 5** and the native MongoDB Node.js driver, the API provides endpoints for creating, retrieving, updating and deleting books, as well as borrowing and returning them.
 
-Authentication is handled through JWT verification using `jose`. The server validates tokens against the BetterAuth JWKS endpoint before allowing access to protected operations.
+Authentication is handled through JWT verification using `jose`. The client app issues the tokens with BetterAuth, and this server validates them against the BetterAuth JWKS endpoint before allowing access to protected operations.
 
 The backend is deployed on Vercel and communicates with the separate Next.js frontend.
 
@@ -70,7 +70,9 @@ Supported options:
 
 - `sort=newest` – Newest books first.
 - `sort=oldest` – Oldest books first.
-- `limit=6` – Limit the number of returned books.
+- `limit=6` – Limit the number of returned books (a whole number from 1 to 100).
+
+Invalid values return a `400` response with a clear message.
 
 ### ➕ Add Book
 
@@ -85,15 +87,26 @@ Each book stores:
 - Contributor name and email.
 - Creation date.
 
-Contributor information is taken from the authenticated user rather than the request body.
+Contributor information and the creation date are set by the server, not taken from the request body.
+
+### ✅ Input Validation
+
+Book data is validated before it is saved:
+
+- Title is required (up to 150 characters).
+- Author is required (up to 100 characters).
+- Category must be Fiction, Science, History, Kids or Others.
+- Image must be a valid `http` or `https` URL.
+- Description is required (up to 1000 characters).
+- Total copies must be a whole number from 1 to 1000.
 
 ### ✏️ Update and Delete Books
 
 - `PATCH` updates existing book information.
 - `DELETE` removes a book from the collection.
-- Ownership verification ensures users can only manage their own books.
+- Ownership verification ensures users can only manage their own books (a `403` is returned otherwise).
 - Books cannot be deleted while they have active borrowing records.
-- Updating total copies recalculates available copies while preserving currently borrowed copies.
+- Updating total copies recalculates available copies while preserving the copies that are currently borrowed. Total copies cannot be set below that number.
 
 ### 🔄 Borrowing System
 
@@ -102,11 +115,11 @@ The borrowing system manages book availability and borrowing records.
 When a user borrows a book, the server:
 
 1. Validates the authenticated user.
-2. Checks whether the requested book exists.
-3. Checks available copies.
-4. Prevents duplicate active borrowing by the same user.
-5. Creates a borrowing record.
-6. Decreases the available copy count by one.
+2. Checks that the requested book exists.
+3. Prevents the user from borrowing a book they already have.
+4. Takes one copy only if a copy is available, in a single atomic step.
+5. Saves the borrowing record, with the return date set 7 days after the borrow date.
+6. Puts the copy back if the record cannot be saved.
 
 Borrowing records contain the book ID, title, image, user email, borrow date and return date.
 
@@ -116,39 +129,38 @@ Users can return books they previously borrowed.
 
 When a book is returned:
 
-- The borrowing record is removed.
+- The borrowing record is removed (only its owner can return it).
 - The corresponding book's available copy count increases by one.
-- The database reflects the updated availability.
 
 ### 📦 Available Copies Management
 
 Book availability is maintained through MongoDB atomic update operations.
 
-- Borrowing decreases available copies.
-- Returning increases available copies.
-- Borrowing is rejected when no copies remain.
-- Copy updates use `$inc` to prevent simple read-modify-write inconsistencies.
-- Borrowing the last available copy is handled atomically.
+- Borrowing decreases available copies with `$inc`.
+- Returning increases available copies with `$inc`.
+- Borrowing is rejected when no copies remain, and the count never goes below zero.
+- Borrowing the last available copy is handled atomically, so two users cannot both get it.
+- A unique index on `bookId` and `userEmail` (created automatically when the server connects to the database) blocks duplicate active borrows, even for simultaneous requests.
 
 ### 🔐 JWT Authentication with BetterAuth
 
 Protected API routes use JWT-based authentication.
 
-The server uses `jose` to verify incoming tokens against the BetterAuth JWKS endpoint.
+The server uses `jose` to verify incoming tokens against the BetterAuth JWKS endpoint (`<AUTH_BASE_URL>/api/auth/jwks`).
 
 The authentication middleware:
 
 - Extracts the bearer token from the Authorization header.
 - Verifies the token signature.
 - Validates the token issuer and audience.
-- Rejects missing, invalid or expired tokens.
-- Makes authenticated user information available to protected routes.
+- Rejects missing, invalid or expired tokens with `401`.
+- Makes the authenticated user's id, name and email available to protected routes.
 
 Public endpoints remain accessible without authentication.
 
 ### 🌐 CORS Configuration
 
-Cross-Origin Resource Sharing is configured to allow requests from the BookNook frontend.
+Cross-Origin Resource Sharing is configured to allow requests from the BookNook frontend origin (`CLIENT_URL`). Several origins can be listed, separated by commas.
 
 ### ❤️ Health Check
 
@@ -158,9 +170,11 @@ A health endpoint checks whether the server and MongoDB connection are working.
 GET /health
 ```
 
+The root route (`GET /`) returns a simple status message. Unknown routes return a JSON `404`, and unexpected errors return a JSON `500`.
+
 ### ☁️ Vercel Deployment
 
-The server is configured for Vercel deployment and can run locally during development or independently in production.
+The server exports the Express app for Vercel (`vercel.json` is included) and only starts listening on a port when it runs locally.
 
 ---
 
@@ -173,7 +187,7 @@ The server is configured for Vercel deployment and can run locally during develo
 | MongoDB | NoSQL database |
 | MongoDB Native Driver | Database operations and queries |
 | jose | JWT verification and JWKS integration |
-| BetterAuth | Authentication and token issuer |
+| BetterAuth | Authentication and token issuer (runs in the client app) |
 | CORS | Cross-origin request configuration |
 | Vercel | Server deployment |
 
@@ -222,6 +236,15 @@ GET /books?sort=newest&limit=6
 POST /books
 Authorization: Bearer <token>
 Content-Type: application/json
+
+{
+  "title": "Book title",
+  "author": "Author name",
+  "category": "Fiction",
+  "image": "https://example.com/cover.jpg",
+  "description": "A short description.",
+  "totalCopies": 3
+}
 ```
 
 **Update a book**
@@ -231,6 +254,8 @@ PATCH /books/:id
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
+
+The body has the same fields as when adding a book.
 
 **Borrow a book**
 
@@ -290,7 +315,7 @@ Each document represents a book contributed by a library member.
 
 ### Borrows Collection
 
-Each document represents an active borrowing record.
+Each document represents an active borrowing record. Returning a book deletes its record.
 
 ```javascript
 {
@@ -329,7 +354,7 @@ booknook-server/
 - [Node.js](https://nodejs.org/) v20 or later.
 - npm.
 - A [MongoDB Atlas](https://www.mongodb.com/atlas) cluster.
-- A configured BetterAuth application on the client side.
+- The BookNook client running with BetterAuth configured ([booknook-client](https://github.com/ABiR994/booknook-client)).
 
 ### Installation
 
@@ -361,10 +386,10 @@ Add the following variables to your `.env` file:
 | Variable | Description |
 |---|---|
 | `MONGODB_URI` | MongoDB Atlas connection string |
-| `DB_NAME` | MongoDB database name |
-| `CLIENT_URL` | Frontend origin allowed by CORS |
-| `AUTH_BASE_URL` | Base URL of the BetterAuth application |
-| `PORT` | Local server port (default: `5000`) |
+| `DB_NAME` | MongoDB database name (defaults to `booknook`) |
+| `CLIENT_URL` | Frontend origin allowed by CORS (no trailing slash) |
+| `AUTH_BASE_URL` | Base URL of the BetterAuth application. It must match the client's `BETTER_AUTH_URL` |
+| `PORT` | Local server port (default: `5000`, not needed on Vercel) |
 
 ### Run Development Server
 
@@ -401,11 +426,11 @@ When deploying your own copy:
 3. Set `MONGODB_URI` to your MongoDB Atlas connection string.
 4. Configure `DB_NAME` with your database name.
 5. Set `CLIENT_URL` to your deployed frontend origin.
-6. Set `AUTH_BASE_URL` to your BetterAuth application URL.
-7. Ensure MongoDB Atlas allows connections from the deployed backend.
+6. Set `AUTH_BASE_URL` to your deployed frontend URL, the same value as the client's `BETTER_AUTH_URL`.
+7. Ensure MongoDB Atlas allows connections from the deployed backend (Network Access).
 8. Deploy the application and verify the `/health` endpoint.
 
-The frontend communicates with this backend through the configured API URL.
+Redeploy after changing environment variables. The frontend communicates with this backend through its `NEXT_PUBLIC_API_URL`.
 
 ---
 
